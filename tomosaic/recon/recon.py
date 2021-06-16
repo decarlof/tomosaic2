@@ -350,7 +350,7 @@ def recon_block(grid, shift_grid, src_folder, dest_folder, slice_range, sino_ste
         else:
             rec = recon_slice(row_sino, theta, center_pos, sinogram_order=sinogram_order, algorithm=algorithm,
                               init_recon=init_recon, ncore=ncore, nchunk=nchunk, **kwargs)
-        rec = tomopy.remove_outlier(rec, tolerance)
+        #rec = tomopy.remove_outlier(rec, tolerance)
         rec = tomopy.circ_mask(rec, axis=0, ratio=0.95)
 
         internal_print('Center:            {:d}'.format(center_pos))
@@ -481,7 +481,7 @@ def recon_slice(row_sino, theta, center_pos, sinogram_order=False, algorithm=Non
     # row_sino = tomopy.normalize_bg(row_sino) # WARNING: normalize_bg can unpredicatably give bad results for some slices
     row_sino = tomopy.remove_stripe_ti(row_sino, alpha=4)
     rec = tomopy.recon(row_sino, theta, center=center_pos, sinogram_order=sinogram_order, algorithm=algorithm,
-        init_recon=init_recon, ncore=ncore, nchunk=nchunk, **kwargs)
+        init_recon=init_recon, ncore=ncore, nchunk=nchunk, filter_name='parzen', **kwargs)
 
     internal_print('recon:           ' + str(time.time() - t))
     return rec

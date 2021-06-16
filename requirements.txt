@@ -1,5 +1,8 @@
-sphinxcontrib-bibtex
-numpy
+scipy
+imageio
 dxchange
+matplotlib
 tomopy
-hdf5=1.8.18
+pyfftw
+mpi4py
+numpy

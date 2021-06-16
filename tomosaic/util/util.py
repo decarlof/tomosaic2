@@ -93,7 +93,8 @@ from tomosaic.util.phase import retrieve_phase
 from tomosaic.misc.misc import allocate_mpi_subsets, read_data_adaptive
 import shutil
 from scipy.ndimage import gaussian_filter
-from scipy.misc import imread, imsave
+# from scipy.misc import imread, imsave
+from imageio import imread, imsave
 from scipy.ndimage.interpolation import rotate
 import matplotlib.pyplot as plt
 from tomopy import downsample

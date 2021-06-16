@@ -170,6 +170,7 @@ def total_fusion(src_folder, dest_folder, dest_fname, file_grid, shift_grid, ble
 
     dest_fname = check_fname_ext(dest_fname, 'h5')
     if rank == 0:
+        # rank 0 is the only I/O thread.
         if not os.path.exists(dest_folder):
             os.mkdir(dest_folder)
         if os.path.exists(dest_folder + '/' + dest_fname):
@@ -182,10 +183,8 @@ def total_fusion(src_folder, dest_folder, dest_fname, file_grid, shift_grid, ble
                 os.remove(dest_folder + '/' + dest_fname)
         f = h5py.File(os.path.join(dest_folder, dest_fname))
     comm.Barrier()
-    if rank != 0:
-        assert os.path.exists(os.path.join(dest_folder, dest_fname))
-        f = h5py.File(os.path.join(dest_folder, dest_fname))
 
+    
     origin_dir = os.getcwd()
     os.chdir(src_folder)
 
