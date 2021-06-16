@@ -62,6 +62,7 @@ import os
 import time
 import six
 import sys
+import dxchange
 try:
     from mpi4py import MPI
 except:
@@ -169,19 +170,49 @@ def total_fusion(src_folder, dest_folder, dest_fname, file_grid, shift_grid, ble
     """
 
     dest_fname = check_fname_ext(dest_fname, 'h5')
+
     if rank == 0:
-        # rank 0 is the only I/O thread.
-        if not os.path.exists(dest_folder):
-            os.mkdir(dest_folder)
-        if os.path.exists(dest_folder + '/' + dest_fname):
-            internal_print('Warning: File already exists. Continue anyway? (y/n) ')
-            cont = six.moves.input()
-            if cont in ['n', 'N']:
-                exit()
-            else:
-                internal_print('Old file will be overwritten.')
-                os.remove(dest_folder + '/' + dest_fname)
-        f = h5py.File(os.path.join(dest_folder, dest_fname))
+        n_frames, y_cam, x_cam = read_data_adaptive(os.path.join(src_folder, file_grid[0, 0]), shape_only=True, data_format=data_format)
+        os.makedirs(os.path.join(dest_folder, 'tmp'))
+    else:
+        n_frames = None
+        y_cam = None
+        x_cam = None
+
+    n_frames = comm.bcast(n_frames, root=0)
+    y_cam = comm.bcast(y_cam, root=0)
+    x_cam = comm.bcast(x_cam, root=0)
+    frames_per_rank = int(n_frames / size)
+
+    full_width = int(np.max(shift_grid[:, -1, 1]) + x_cam + 10)
+    full_height = int(np.max(shift_grid[-1, :, 0]) + y_cam + 10)
+
+    comm.Barrier()
+
+    t0 = time.time()
+    alloc_set = allocate_mpi_subsets(n_frames, size)
+    for frame in alloc_set[rank]:
+        internal_print('alloc set {:d}'.format(rank))
+        internal_print('    Rank: {:d}; current frame: {:d}..'.format(rank, frame))
+        t00 = time.time()
+        # Skip frames that are already stitched.
+        if not os.path.exists(os.path.join(dest_folder, 'tmp', str(frame) + '.tiff')):
+            pano = np.zeros((full_height, full_width), dtype=dtype)
+            # save_stdout = sys.stdout
+            # sys.stdout = open('log', 'w')
+            temp = build_panorama(src_folder, file_grid, shift_grid, frame=frame, method=blend_method, method2=blend_method2,
+                                  blend_options=blend_options, blend_options2=blend_options2, blur=blur, color_correction=color_correction)
+            temp[np.isnan(temp)] = 0
+            # sys.stdout = save_stdout
+            pano[:temp.shape[0], :temp.shape[1]] = temp.astype(dtype)
+            dxchange.write_tiff(pano, os.path.join(dest_folder, 'tmp', str(frame)), dtype='float32', overwrite=True)
+        internal_print('    Frame {:d} done in {:.3f} s.'.format(frame, time.time() - t00))
+    internal_print('Data built in {:.3f} s.'.format(time.time() - t0))
+
+    internal_print('Writing data into new HDF5 file....')
+
+    if rank == 0:
+
     comm.Barrier()
 
     
@@ -226,9 +257,35 @@ def total_fusion(src_folder, dest_folder, dest_fname, file_grid, shift_grid, ble
     #     os.remove('trash')
     # except:
     #     print('Please remove trash manually.')
+# =======
+# not sure what happened here ...
 
-    os.chdir(origin_dir)
 
+        origin_dir = os.getcwd()
+        # os.chdir(src_folder)
+
+        _, _, _, theta = read_data_adaptive(os.path.join(src_folder, file_grid[0, 0]), proj=(0, 1), data_format=data_format)
+        theta = np.rad2deg(theta)
+
+        grp = f.create_group('exchange')
+        full_shape = (n_frames, full_height, full_width)
+        dset_theta = grp.create_dataset('theta', theta.shape, dtype=theta.dtype, data=theta)
+        dset_data = grp.create_dataset('data', full_shape, dtype=dtype)
+        dset_flat = grp.create_dataset('data_white', (1, full_height, full_width), dtype=dtype)
+        dset_dark = grp.create_dataset('data_dark', (1, full_height, full_width), dtype=dtype)
+        dset_flat[:, :, :] = np.ones(dset_flat.shape, dtype=dtype)
+        dset_dark[:, :, :] = np.zeros(dset_dark.shape, dtype=dtype)
+        internal_print('Started to build full hdf5.')
+        for frame in range(n_frames):
+            pano = dxchange.read_tiff(os.path.join(dest_folder, 'tmp', str(frame) + '.tiff'))
+            dset_data[frame, :, :] = pano
+        f.close()
+        internal_print('Data built and written in {:.3f} s.'.format(time.time() - t0))
+        internal_print('Removing temporary folder...')
+        shutil.rmtree(os.path.join(dest_folder, 'tmp'))
+        internal_print('Done.')
+    comm.Barrier()
+# >>>>>>> 214f897588dc233c08a7dbccb3e87eb27ecdef95
 
 def reorganize_dir(file_list, raw_ds=(2,4), dtype='float16', **kwargs):
     """
